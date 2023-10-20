@@ -15,12 +15,12 @@ Python module for interacting with HKC's Alarm API, allowing for easy interactio
 
 1. Clone this repository:
 ```
-git clone [your-repo-link]
+git clone https://github.com/jasonmadigan/pyhkc
 ```
 
 2. Navigate to the repository's directory:
 ```
-cd [your-repo-directory]
+cd pyhkc
 ```
 
 3. Install the required packages:
