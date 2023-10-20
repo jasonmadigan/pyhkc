@@ -1,10 +1,12 @@
 from setuptools import setup, find_packages
+import os
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 setup(
     name='pyhkc',
     version='0.1',  # start with a small number, increment as you make changes
     packages=find_packages(),
-    install_requires=open('requirements.txt').readlines(),
+    install_requires=open(os.path.join(BASE_DIR, 'requirements.txt')).readlines(),
     # Metadata
     author='Jason Madigan',
     author_email='jason@jasonmadigan.com',
