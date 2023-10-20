@@ -63,3 +63,10 @@ print("Recent Logs:", logs)
 # Disarm the system.
 # alarm_system.disarm()
 ```
+
+## Publishing
+
+```bash
+python3 setup.py sdist bdist_wheel
+twine upload dist/*
+```

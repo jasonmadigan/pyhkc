@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+
+# Distribution / packaging
+build/
+dist/
+*.egg
+
+# Environments
+.env
+.venv/
+venv/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS-specific
+.DS_Store  # macOS
+*.swp  # vim
+*.swo  # vim
+
