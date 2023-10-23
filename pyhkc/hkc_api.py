@@ -130,6 +130,20 @@ class HKCAlarm:
 
     return all_inputs
 
+  def check_login(self):
+      system_status = self.get_system_status()
+      # Check for a successful login
+      if 'userOptions' in system_status:
+          return True
+      # Check for an unsuccessful login
+      elif 'success' in system_status and system_status['success'] is False:
+          return False
+      # In case the response format is neither of the above, 
+      # you might want to log an error or raise an exception
+      else:
+          raise Exception('Unexpected response format from get_system_status')
+
+
   # Private methods for direct API calls
 
   def _mobile_register(self, data):
@@ -197,6 +211,10 @@ if __name__ == '__main__':
   user_code = int(os.environ.get("HKC_USER_CODE", user_code_sample))
 
   alarm_system = HKCAlarm(panel_id, panel_password, user_code)
+
+  # Assuming HKCAlarm is already initialized as alarm_system
+  # login_check = alarm_system.check_login()
+  # print(login_check)  # Outputs: True or False
   
   status = alarm_system.get_system_status()
 
