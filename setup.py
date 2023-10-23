@@ -4,7 +4,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 setup(
     name='pyhkc',
-    version='0.4.0',  # start with a small number, increment as you make changes
+    version='0.4.1',  # start with a small number, increment as you make changes
     packages=find_packages(),
     install_requires=open(os.path.join(BASE_DIR, 'requirements.txt')).readlines(),
     # Metadata

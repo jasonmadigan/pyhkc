@@ -143,6 +143,18 @@ class HKCAlarm:
       else:
           raise Exception('Unexpected response format from get_system_status')
 
+  def get_panel(self):
+      data = {
+        "panelId": self.panel_id,
+        "panelPassword": self.panel_password,
+        "keys": "",
+        "isKeypadEnabled": False,
+        "secureCommAddress": "securecomm.hkc.ie"
+      }
+      url = f"{self.base_url}/Panel/RemoteKeypad/"
+      response = requests.post(url, headers=self.headers, json=data)
+      keypad_data = response.json()
+      return keypad_data
 
   # Private methods for direct API calls
 
@@ -209,8 +221,10 @@ if __name__ == '__main__':
   panel_id = int(os.environ.get("HKC_PANEL_ID", panel_id_sample))
   panel_password = os.environ.get("HKC_PANEL_PASSWORD", panel_password_sample)
   user_code = int(os.environ.get("HKC_USER_CODE", user_code_sample))
-
   alarm_system = HKCAlarm(panel_id, panel_password, user_code)
+
+  panel_data = alarm_system.get_panel()
+  print(panel_data)
 
   # Assuming HKCAlarm is already initialized as alarm_system
   # login_check = alarm_system.check_login()
