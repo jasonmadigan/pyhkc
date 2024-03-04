@@ -14,9 +14,15 @@ class HKCAlarm:
       "content-type": "application/json;charset=utf-8",
       "user-agent": "okhttp/4.9.2"
     }
+    self.securecomm_address = ""
+    self.hardware_id = ""  
+    self._initialize()
+
+  def _initialize(self):
+    self.securecomm_address = self.get_system_status().get('secureCommAddress', self.securecomm_address)
     self.hardware_id = self._get_hardware_id()
 
-  def register_mobile(self, app_version="1.0.3", hardware_id="", description=""):
+  def register_mobile(self, app_version="1.0.2", hardware_id="", description=""):
     data = {
       "appType": 5,
       "appVersion": app_version,
@@ -32,79 +38,40 @@ class HKCAlarm:
       "panelId": self.panel_id,
       "panelPassword": self.panel_password,
       "userCode": self.user_code,
-      "includeDescriptions": True,
-      "secureCommAddress": "securecomm.hkc.ie"
+      "includeDescriptions": True
     }
-    return self._get_status(data)
+    response = self._get_status(data)
+    return response
 
   def arm_partset_a(self):
-    data = {
-      "panelId": self.panel_id,
-      "panelPassword": self.panel_password,
-      "userCode": self.user_code,
-      "command": 1,
-      "block": 0,
-      "inhibit": False,
-      "hardwareId": self.hardware_id,
-      "secureCommAddress": "securecomm.hkc.ie"
-    }
-    return self._arm(data)
+    return self._arm_or_disarm(command=1, block=0)
 
   def arm_partset_b(self):
-    data = {
-      "panelId": self.panel_id,
-      "panelPassword": self.panel_password,
-      "userCode": self.user_code,
-      "command": 2,
-      "block": 0,
-      "inhibit": False,
-      "hardwareId": self.hardware_id,
-      "secureCommAddress": "securecomm.hkc.ie"
-    }
-    return self._arm(data)
-  
+    return self._arm_or_disarm(command=2, block=0)
+
   def arm_fullset(self):
-    data = {
-      "panelId": self.panel_id,
-      "panelPassword": self.panel_password,
-      "userCode": self.user_code,
-      "command": 3,
-      "block": 0,
-      "inhibit": False,
-      "hardwareId": self.hardware_id,
-      "secureCommAddress": "securecomm.hkc.ie"
-    }
-    return self._arm(data)
+    return self._arm_or_disarm(command=3, block=0)
 
   def disarm(self):
-    data = {
-      "panelId": self.panel_id,
-      "panelPassword": self.panel_password,
-      "userCode": self.user_code,
-      "command": 0,
-      "block": 0,
-      "inhibit": False,
-      "hardwareId":self.hardware_id,
-      "secureCommAddress": "securecomm.hkc.ie"
-    }
-    return self._unset(data)
+    return self._arm_or_disarm(command=0, block=0)
 
   def fetch_logs(self, num_previous_logs=10):
     latest_event_id = self._get_latest_event_id()
     logs = []
     while len(logs) < num_previous_logs:
+        if latest_event_id is None:
+            break
         start_event_id = latest_event_id - 4  # Since each request fetches 5 logs
         data = {
             "panelId": self.panel_id,
             "panelPassword": self.panel_password,
-            "secureCommAddress": "securecomm.hkc.ie",
+            "secureCommAddress": self.securecomm_address,
             "panelEventId": start_event_id
         }
         logs_chunk = self._get_logs(data)
         logs.extend(logs_chunk)
         latest_event_id = start_event_id - 1  # Decrement for the next batch
     return logs[:num_previous_logs]  # Return only the desired number of logs
-
 
   def get_all_inputs(self):
     all_inputs = []
@@ -117,9 +84,10 @@ class HKCAlarm:
         "panelPassword": self.panel_password,
         "userCode": self.user_code,
         "firstInput": first_input,
-        "secureCommAddress": "securecomm.hkc.ie"
+        "secureCommAddress": self.securecomm_address
       }
       inputs_response = self._get_inputs(data)
+
       current_inputs = inputs_response.get("inputs", [])
       all_inputs.extend(current_inputs)
       more_inputs = inputs_response.get("moreInputs", False)
@@ -149,7 +117,7 @@ class HKCAlarm:
         "panelPassword": self.panel_password,
         "keys": "",
         "isKeypadEnabled": False,
-        "secureCommAddress": "securecomm.hkc.ie"
+        "secureCommAddress": self.securecomm_address
       }
       url = f"{self.base_url}/Panel/RemoteKeypad/"
       response = requests.post(url, headers=self.headers, json=data)
@@ -158,35 +126,38 @@ class HKCAlarm:
 
   # Private methods for direct API calls
 
+  def _api_request(self, method, url, data=None):
+    try:
+        response = requests.request(method, url, headers=self.headers, json=data)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
   def _mobile_register(self, data):
-    url = f"{self.base_url}/Registration/MobileRegister"
-    response = requests.post(url, headers=self.headers, json=data)
-    return response.json()
+    return self._api_request("POST", f"{self.base_url}/Registration/MobileRegister", data)
 
   def _get_status(self, data):
-    url = f"{self.base_url}/v2/Panel/Status"
-    response = requests.post(url, headers=self.headers, json=data)
-    return response.json()
+    return self._api_request("POST", f"{self.base_url}/v2/Panel/Status", data)
 
-  def _arm(self, data):
-    url = f"{self.base_url}/Panel/Arming"
-    response = requests.post(url, headers=self.headers, json=data)
-    return response.json()
-
-  def _unset(self, data):
-    url = f"{self.base_url}/Panel/Arming"
-    response = requests.post(url, headers=self.headers, json=data)
-    return response.json()
+  def _arm_or_disarm(self, command, block):
+    data = {
+      "panelId": self.panel_id,
+      "panelPassword": self.panel_password,
+      "userCode": self.user_code,
+      "command": command,
+      "block": block,
+      "inhibit": False,
+      "hardwareId": self.hardware_id,
+      "secureCommAddress": self.securecomm_address
+    }
+    return self._api_request("POST", f"{self.base_url}/Panel/Arming", data)
 
   def _get_logs(self, data):
-    url = f"{self.base_url}/v2/Panel/Logs"
-    response = requests.post(url, headers=self.headers, json=data)
-    return response.json()
+    return self._api_request("POST", f"{self.base_url}/v2/Panel/Logs", data)
 
   def _get_inputs(self, data):
-    url = f"{self.base_url}/v2/Device/Inputs"
-    response = requests.post(url, headers=self.headers, json=data)
-    return response.json()
+    return self._api_request("POST", f"{self.base_url}/v2/Device/Inputs", data)
 
   def _get_hardware_id(self):
     data = {
@@ -194,7 +165,7 @@ class HKCAlarm:
       "panelPassword": self.panel_password,
       "keys": "",
       "isKeypadEnabled": False,
-      "secureCommAddress": "securecomm.hkc.ie"
+      "secureCommAddress": self.securecomm_address
     }
     url = f"{self.base_url}/Panel/RemoteKeypad/"
     response = requests.post(url, headers=self.headers, json=data)
@@ -202,14 +173,11 @@ class HKCAlarm:
     return keypad_data.get('hardwareId', '')
   
   def _get_latest_event_id(self):
-    data = {
+    return self._api_request("POST", f"{self.base_url}/v2/Panel/Log", {
         "panelId": self.panel_id,
         "panelPassword": self.panel_password,
-        "secureCommAddress": "securecomm.hkc.ie"
-    }
-    url = f"{self.base_url}/v2/Panel/Log"
-    response = requests.post(url, headers=self.headers, json=data)
-    return response.json().get('eventId', None)
+        "secureCommAddress": self.securecomm_address
+    }).get('eventId', None)
 
 if __name__ == '__main__':
   # Sample values for initialization - you would replace these with your actual values.
@@ -240,7 +208,6 @@ if __name__ == '__main__':
       if not isinstance(value, (list, dict)):
           print(f"| {key.ljust(17)} | {str(value).ljust(30)} |")
   print("+-------------------+--------------------------------+\n")
-
 
   print("\nAll Inputs:")
   inputs = alarm_system.get_all_inputs()
