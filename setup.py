@@ -4,10 +4,9 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 setup(
     name='pyhkc',
-    version='0.4.1',  # start with a small number, increment as you make changes
+    version='0.4.2',
     packages=find_packages(),
     install_requires=open(os.path.join(BASE_DIR, 'requirements.txt')).readlines(),
-    # Metadata
     author='Jason Madigan',
     author_email='jason@jasonmadigan.com',
     description='A Python client for HKC SecureComm API',
