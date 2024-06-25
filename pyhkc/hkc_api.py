@@ -1,9 +1,11 @@
 import requests
 import os
 from tabulate import tabulate
+import logging
+from tenacity import retry, wait_exponential, stop_after_attempt
 
 class HKCAlarm:
-  def __init__(self, panel_id, panel_password, user_code, base_url="https://hkc.api.securecomm.cloud"):
+  def __init__(self, panel_id, panel_password, user_code, base_url="https://hkc.api.securecomm.cloud", log_level=logging.INFO):
     self.base_url = base_url
     self.panel_id = panel_id
     self.panel_password = panel_password
@@ -15,7 +17,12 @@ class HKCAlarm:
       "user-agent": "okhttp/4.9.2"
     }
     self.securecomm_address = ""
-    self.hardware_id = ""  
+    self.hardware_id = ""
+    
+    logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
+    self.logger = logging.getLogger(__name__)
+        
+    self.logger.info("Initializing HKCAlarm")
     self._initialize()
 
   def _initialize(self):
@@ -113,26 +120,26 @@ class HKCAlarm:
 
   def get_panel(self):
       data = {
-        "panelId": self.panel_id,
-        "panelPassword": self.panel_password,
-        "keys": "",
-        "isKeypadEnabled": False,
-        "secureCommAddress": self.securecomm_address
+          "panelId": self.panel_id,
+          "panelPassword": self.panel_password,
+          "keys": "",
+          "isKeypadEnabled": False,
+          "secureCommAddress": self.securecomm_address
       }
-      url = f"{self.base_url}/Panel/RemoteKeypad/"
-      response = requests.post(url, headers=self.headers, json=data)
-      keypad_data = response.json()
-      return keypad_data
+      return self._api_request("POST", f"{self.base_url}/Panel/RemoteKeypad/", data)
 
   # Private methods for direct API calls
 
+  @retry(wait=wait_exponential(multiplier=1, min=4, max=30), stop=stop_after_attempt(5), reraise=True)
   def _api_request(self, method, url, data=None):
-    try:
-        response = requests.request(method, url, headers=self.headers, json=data)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
+      try:
+          self.logger.debug(f"Making {method} request to {url} with data: {data}")
+          response = requests.request(method, url, headers=self.headers, json=data)
+          response.raise_for_status()
+          return response.json()
+      except requests.exceptions.RequestException as e:
+          self.logger.error(f"Request to {url} failed: {str(e)}")
+          raise
 
   def _mobile_register(self, data):
     return self._api_request("POST", f"{self.base_url}/Registration/MobileRegister", data)
@@ -189,7 +196,7 @@ if __name__ == '__main__':
   panel_id = int(os.environ.get("HKC_PANEL_ID", panel_id_sample))
   panel_password = os.environ.get("HKC_PANEL_PASSWORD", panel_password_sample)
   user_code = int(os.environ.get("HKC_USER_CODE", user_code_sample))
-  alarm_system = HKCAlarm(panel_id, panel_password, user_code)
+  alarm_system = HKCAlarm(panel_id, panel_password, user_code, log_level=logging.DEBUG)
 
   panel_data = alarm_system.get_panel()
   print(panel_data)
@@ -197,7 +204,6 @@ if __name__ == '__main__':
   # Assuming HKCAlarm is already initialized as alarm_system
   # login_check = alarm_system.check_login()
   # print(login_check)  # Outputs: True or False
-  
   status = alarm_system.get_system_status()
 
   print("System Status:")
