@@ -4,7 +4,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 setup(
     name='pyhkc',
-    version='0.4.5',
+    version='0.4.6',
     packages=find_packages(),
     install_requires=open(os.path.join(BASE_DIR, 'requirements.txt')).readlines(),
     author='Jason Madigan',
