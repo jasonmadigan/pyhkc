@@ -7,9 +7,9 @@ from tenacity import retry, wait_exponential, stop_after_attempt
 class HKCAlarm:
   def __init__(self, panel_id, panel_password, user_code, base_url="https://hkc.api.securecomm.cloud", log_level=logging.INFO):
     self.base_url = base_url
-    self.panel_id = panel_id
+    self.panel_id = int(panel_id)
     self.panel_password = panel_password
-    self.user_code = user_code
+    self.user_code = int(user_code)
     self.headers = {
       "Host": "hkc.api.securecomm.cloud",
       "accept": "application/json, text/plain, */*",
