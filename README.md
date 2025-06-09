@@ -36,7 +36,7 @@ pip install -r requirements.txt
 ## Example Usage
 
 ```python
-from hkc_alarm import HKCAlarm
+from pyhkc.hkc_api import HKCAlarm
 
 # Initialize the system with your credentials.
 panel_id = [your-panel-id]  # replace with your panel ID
