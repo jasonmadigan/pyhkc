@@ -1,5 +1,6 @@
 import requests
 import os
+import uuid
 from tabulate import tabulate
 import logging
 from tenacity import retry, wait_exponential, stop_after_attempt
@@ -17,7 +18,8 @@ class HKCAlarm:
       "user-agent": "okhttp/4.9.2"
     }
     self.securecomm_address = ""
-    self.hardware_id = ""
+    self.hardware_id = str(uuid.uuid4())
+    self.device_id = None  # fetched during init
     
     logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
     self.logger = logging.getLogger(__name__)
@@ -26,8 +28,10 @@ class HKCAlarm:
     self._initialize()
 
   def _initialize(self):
+    # get device id first - required for appv3
+    self.device_id = self._get_device_id()
+    self.logger.info(f"Obtained device ID: {self.device_id}")
     self.securecomm_address = self.get_system_status().get('secureCommAddress', self.securecomm_address)
-    self.hardware_id = self._get_hardware_id()
 
   def register_mobile(self, app_version="1.0.2", hardware_id="", description=""):
     data = {
@@ -42,9 +46,10 @@ class HKCAlarm:
 
   def get_system_status(self):
     data = {
-      "panelId": self.panel_id,
-      "panelPassword": self.panel_password,
-      "userCode": self.user_code,
+      "hardwareId": self.hardware_id,
+      "deviceId": self.device_id,
+      "devicePassword": self.panel_password,
+      "userCode": str(self.user_code),
       "includeDescriptions": True
     }
     response = self._get_status(data)
@@ -119,14 +124,14 @@ class HKCAlarm:
           raise Exception('Unexpected response format from get_system_status')
 
   def get_panel(self):
+      # remote keypad
       data = {
-          "panelId": self.panel_id,
-          "panelPassword": self.panel_password,
-          "keys": "",
-          "isKeypadEnabled": False,
-          "secureCommAddress": self.securecomm_address
+          "hardwareId": self.hardware_id,
+          "deviceId": self.device_id,
+          "devicePassword": self.panel_password,
+          "keys": ""
       }
-      return self._api_request("POST", f"{self.base_url}/Panel/RemoteKeypad/", data)
+      return self._api_request("POST", f"{self.base_url}/AppV3/Device/RemoteKeypad", data)
 
   # Private methods for direct API calls
 
@@ -142,49 +147,66 @@ class HKCAlarm:
           raise
 
   def _mobile_register(self, data):
-    return self._api_request("POST", f"{self.base_url}/Registration/MobileRegister", data)
+    # probably not needed anymore - mobile app registers differently now
+    return self._api_request("POST", f"{self.base_url}/AppV3/Registration/MobileRegister", data)
 
   def _get_status(self, data):
-    return self._api_request("POST", f"{self.base_url}/v2/Panel/Status", data)
+    return self._api_request("POST", f"{self.base_url}/AppV3/Device/Status", data)
 
   def _arm_or_disarm(self, command, block):
     data = {
-      "panelId": self.panel_id,
-      "panelPassword": self.panel_password,
-      "userCode": self.user_code,
+      "hardwareId": self.hardware_id,
+      "deviceId": self.device_id,
+      "devicePassword": self.panel_password,
+      "userCode": str(self.user_code),
       "command": command,
       "block": block,
-      "inhibit": False,
-      "hardwareId": self.hardware_id,
-      "secureCommAddress": self.securecomm_address
+      "inhibit": False
     }
-    return self._api_request("POST", f"{self.base_url}/Panel/Arming", data)
+    return self._api_request("POST", f"{self.base_url}/AppV3/Device/Arming", data)
 
   def _get_logs(self, data):
-    return self._api_request("POST", f"{self.base_url}/v2/Panel/Logs", data)
+    # appv3 format  
+    event_id = data.get("panelEventId")
+    request_data = {
+      "hardwareId": self.hardware_id,
+      "deviceId": self.device_id,
+      "devicePassword": self.panel_password,
+      "eventId": event_id
+    }
+    return self._api_request("POST", f"{self.base_url}/AppV3/Device/Logs", request_data)
 
   def _get_inputs(self, data):
-    return self._api_request("POST", f"{self.base_url}/v2/Device/Inputs", data)
-
-  def _get_hardware_id(self):
+    first_input = data.get("firstInput", 1)
     data = {
-      "panelId": self.panel_id,
-      "panelPassword": self.panel_password,
-      "keys": "",
-      "isKeypadEnabled": False,
-      "secureCommAddress": self.securecomm_address
+      "hardwareId": self.hardware_id,
+      "deviceId": self.device_id,
+      "devicePassword": self.panel_password,
+      "userCode": str(self.user_code),
+      "firstInput": first_input
     }
-    url = f"{self.base_url}/Panel/RemoteKeypad/"
-    response = requests.post(url, headers=self.headers, json=data)
-    keypad_data = response.json()
-    return keypad_data.get('hardwareId', '')
+    return self._api_request("POST", f"{self.base_url}/AppV3/Device/Inputs", data)
+
+  def _get_device_id(self):
+    # must call first for appv3
+    data = {
+      "hardwareId": self.hardware_id,
+      "installationId": self.panel_id,
+      "devicePassword": self.panel_password,
+      "userCode": str(self.user_code)
+    }
+    response = self._api_request("POST", f"{self.base_url}/AppV3/App/GetDeviceId", data)
+    return response.get("deviceId")
   
   def _get_latest_event_id(self):
-    return self._api_request("POST", f"{self.base_url}/v2/Panel/Log", {
-        "panelId": self.panel_id,
-        "panelPassword": self.panel_password,
-        "secureCommAddress": self.securecomm_address
-    }).get('eventId', None)
+    # get latest event id for logs
+    data = {
+      "hardwareId": self.hardware_id,
+      "deviceId": self.device_id,
+      "devicePassword": self.panel_password
+    }
+    response = self._api_request("POST", f"{self.base_url}/AppV3/Device/Log", data)
+    return response.get("eventId")
 
 if __name__ == '__main__':
   # Sample values for initialization - you would replace these with your actual values.
@@ -196,17 +218,80 @@ if __name__ == '__main__':
   panel_id = int(os.environ.get("HKC_PANEL_ID", panel_id_sample))
   panel_password = os.environ.get("HKC_PANEL_PASSWORD", panel_password_sample)
   user_code = int(os.environ.get("HKC_USER_CODE", user_code_sample))
-  alarm_system = HKCAlarm(panel_id, panel_password, user_code, log_level=logging.DEBUG)
-
-  panel_data = alarm_system.get_panel()
-  print(panel_data)
-
-  # Assuming HKCAlarm is already initialized as alarm_system
-  # login_check = alarm_system.check_login()
-  # print(login_check)  # Outputs: True or False
+  
+  print("Testing HKC API with AppV3 endpoints...")
+  print("-" * 50)
+  
+  # initialize
+  print("\nInitializing...")
+  alarm_system = HKCAlarm(panel_id, panel_password, user_code, log_level=logging.INFO)
+  print(f"Hardware ID: {alarm_system.hardware_id}")
+  print(f"Device ID: {alarm_system.device_id}")
+  print(f"Secure Comm Address: {alarm_system.securecomm_address or '(empty)'}")
+  
+  # system status
+  print("\nGetting system status...")
   status = alarm_system.get_system_status()
-
-  print("System Status:")
+  print(f"Blocks: {len(status.get('blocks', []))}")
+  print(f"User Options: {status.get('userOptions', {})}")
+  if 'blocks' in status:
+    for i, block in enumerate(status['blocks'][:2]):
+      print(f"  Block {i}: Armed={block.get('armState')}, Enabled={block.get('isEnabled')}")
+  
+  # login check
+  print("\nChecking login...")
+  try:
+    login_ok = alarm_system.check_login()
+    print(f"Login check: {'Success' if login_ok else 'Failed'}")
+  except Exception as e:
+    print(f"Login check failed: {e}")
+  
+  # inputs
+  print("\nGetting all inputs...")
+  inputs = alarm_system.get_all_inputs()
+  print(f"Found {len(inputs)} inputs/zones")
+  if inputs:
+    headers = ["Zone", "Description", "State", "Type"]
+    table_data = []
+    for inp in inputs[:5]:
+      table_data.append([
+        inp.get('input'),
+        inp.get('description', ''),
+        inp.get('inputState'),
+        inp.get('inputType')
+      ])
+    print(tabulate(table_data, headers=headers, tablefmt='simple'))
+  
+  # logs
+  print("\nFetching logs...")
+  logs = alarm_system.fetch_logs(num_previous_logs=5)
+  print(f"Got {len(logs)} log entries")
+  if logs:
+    for log in logs[:3]:
+      print(f"  {log.get('date')}: {log.get('message')}")
+  
+  # remote keypad
+  print("\nGetting panel/keypad...")
+  try:
+    panel_data = alarm_system.get_panel()
+    print(f"Panel retrieved")
+    print(f"  Display: {panel_data.get('display')}")
+    print(f"  LEDs - Green: {panel_data.get('greenLed')}, Red: {panel_data.get('redLed')}, Amber: {panel_data.get('amberLed')}")
+  except Exception as e:
+    print(f"Panel failed: {e}")
+  
+  # arm/disarm test
+  if os.environ.get("TEST_ARM_DISARM", "false").lower() == "true":
+    print("\nTesting disarm...")
+    result = alarm_system.disarm()
+    print(f"Disarm result: {result}")
+  else:
+    print("\nSkipping arm/disarm test (set TEST_ARM_DISARM=true to test)")
+  
+  print("\n" + "-" * 50)
+  print("Tests completed")
+  
+  print("\nDetailed System Status:")
   print("+-------------------+--------------------------------+")
   print("| Key               | Value                          |")
   print("+===================+================================+")
@@ -214,18 +299,13 @@ if __name__ == '__main__':
       if not isinstance(value, (list, dict)):
           print(f"| {key.ljust(17)} | {str(value).ljust(30)} |")
   print("+-------------------+--------------------------------+\n")
-
-  print("\nAll Inputs:")
-  inputs = alarm_system.get_all_inputs()
+  
+  print("\nDetailed Inputs Table:")
   headers = ["Input", "Input ID", "Description", "Input State", "Input Type", "Timestamp", "Action Inhibit", "Camera ID"]
-  table_data = [[input_data[key] for key in ["input", "inputId", "description", "inputState", "inputType", "timestamp", "actionInhibit", "cameraId"]] for input_data in inputs]
+  table_data = [[input_data.get(key, '') for key in ["input", "inputId", "description", "inputState", "inputType", "timestamp", "actionInhibit", "cameraId"]] for input_data in inputs]
   print(tabulate(table_data, headers=headers, tablefmt='grid'))
-
-  print("\nRecent Logs:")
-  logs = alarm_system.fetch_logs()
-  headers = ["Event ID", "Message", "Alarm", "Fault", "Date", "Verification", "Event Action", "Type", "Number"]
-  table_data = [[log[key] for key in ["eventId", "message", "alarm", "fault", "date", "verification", "eventAction", "type", "number"]] for log in logs]
+  
+  print("\nDetailed Logs Table:")
+  headers = ["Event ID", "Message", "Alarm", "Fault", "Date", "Verification", "Event Action"]
+  table_data = [[log.get(key, '') for key in ["eventId", "message", "alarm", "fault", "date", "verification", "eventAction"]] for log in logs]
   print(tabulate(table_data, headers=headers, tablefmt='grid'))
-
-  # alarm_system.arm_fullset()
-  # alarm_system.disarm()
