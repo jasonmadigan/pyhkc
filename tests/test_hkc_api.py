@@ -1,5 +1,10 @@
+import socket
+import threading
 import unittest
 from unittest.mock import patch
+
+from requests.exceptions import ReadTimeout
+from tenacity import stop_after_attempt
 
 from pyhkc import HKCAlarm
 
@@ -159,6 +164,44 @@ class HKCAlarmTests(unittest.TestCase):
     self.assertEqual(entity_map["blocks"][1]["inputs"], [])
     self.assertEqual(entity_map["ambiguousInputs"][0]["candidateBlocks"], [1, 2])
     self.assertEqual(entity_map["ambiguousInputs"][0]["inputId"], 7)
+
+  def test_request_times_out_when_server_never_replies(self):
+    with patch.object(HKCAlarm, "_initialize", fake_initialize):
+      alarm = HKCAlarm(123456, "panel-password", 1111, timeout=(1, 0.2))
+
+    single_attempt = HKCAlarm._api_request.retry_with(stop=stop_after_attempt(1))
+    outcome = {}
+
+    def call(url):
+      try:
+        single_attempt(alarm, "POST", url, {})
+      except Exception as err:
+        outcome["error"] = err
+
+    # listens but never accepts, so the request is sent and no reply comes
+    with socket.socket() as server:
+      server.bind(("127.0.0.1", 0))
+      server.listen()
+      url = f"http://127.0.0.1:{server.getsockname()[1]}/AppV3/Device/Status"
+      worker = threading.Thread(target=call, args=(url,), daemon=True)
+      with self.assertLogs("pyhkc.hkc_api", level="ERROR"):
+        worker.start()
+        worker.join(timeout=5)
+        self.assertFalse(worker.is_alive(), "request still blocked after 5s")
+
+    self.assertIsInstance(outcome.get("error"), ReadTimeout)
+
+  def test_requests_use_finite_timeout_by_default(self):
+    with patch.object(HKCAlarm, "_initialize", fake_initialize):
+      alarm = HKCAlarm(123456, "panel-password", 1111)
+
+    with patch("pyhkc.hkc_api.requests.request") as mock_request:
+      mock_request.return_value.json.return_value = {"resultCode": 5}
+      alarm.disarm()
+
+    connect_timeout, read_timeout = mock_request.call_args.kwargs["timeout"]
+    self.assertGreater(connect_timeout, 0)
+    self.assertGreater(read_timeout, 0)
 
 
 if __name__ == "__main__":
