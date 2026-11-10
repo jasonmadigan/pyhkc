@@ -7,13 +7,17 @@ import requests
 from tabulate import tabulate
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+# (connect, read) seconds. without a read timeout a dropped connection blocks forever
+DEFAULT_TIMEOUT = (10, 30)
+
 class HKCAlarm:
-  def __init__(self, panel_id, panel_password, user_code, base_url="https://hkc.api.securecomm.cloud", log_level=logging.INFO, user_codes=None):
+  def __init__(self, panel_id, panel_password, user_code, base_url="https://hkc.api.securecomm.cloud", log_level=logging.INFO, user_codes=None, timeout=DEFAULT_TIMEOUT):
     self.base_url = base_url
     self.panel_id = int(panel_id)
     self.panel_password = panel_password
     self.user_codes = self._normalize_user_codes(user_code, user_codes)
     self.user_code = self.user_codes[0]
+    self.timeout = timeout
     self.headers = {
       "Host": "hkc.api.securecomm.cloud",
       "accept": "application/json, text/plain, */*",
@@ -358,7 +362,7 @@ class HKCAlarm:
   def _api_request(self, method, url, data=None):
       try:
           self.logger.debug(f"Making {method} request to {url} with data: {data}")
-          response = requests.request(method, url, headers=self.headers, json=data)
+          response = requests.request(method, url, headers=self.headers, json=data, timeout=self.timeout)
           response.raise_for_status()
           return response.json()
       except requests.exceptions.RequestException as e:

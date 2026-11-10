@@ -47,6 +47,10 @@ user_code = [your-user-code]  # replace with your user code
 
 alarm_system = HKCAlarm(panel_id, panel_password, user_code)
 
+# Requests time out after 10s connecting or 30s waiting for a reply, then retry.
+# Pass `timeout` (seconds, or a (connect, read) tuple) to change that.
+# alarm_system = HKCAlarm(panel_id, panel_password, user_code, timeout=(5, 20))
+
 # Retrieve system status.
 status = alarm_system.get_system_status()
 print("System Status:", status)
